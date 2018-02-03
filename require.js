@@ -51,7 +51,6 @@ var requirejs, require, define;
       name: name,
       deps: deps,
       callback: callback,
-      uppers: [],  // parent modules that are dependent on this module.
       result: null,
       loaded: false,
     };
@@ -103,7 +102,11 @@ var requirejs, require, define;
       let element = createScript(moduleName);
     } else {
       // For non-AMD compliant modules, we defer loading until its deps are all
-      // loaded.
+      // loaded. Here we simualte the define() call on this module - create
+      // module, and request its dependencies.
+      let module = createModule(moduleName, config.shim[moduleName].deps, null);
+      modules.set(moduleName, module);
+
       let shim = config.shim[moduleName];
       let unloaded = getUnloaded(shim.deps);
       if (unloaded.length == 0) {
@@ -189,14 +192,12 @@ var requirejs, require, define;
       modules.set(moduleName, module);
       module.name = moduleName;
     } else {
-      // Create module for non AMD compliant module, as they don't use define
-      // to add module.
-      module = createModule(moduleName, config.shim[moduleName].deps, null);
-      modules.set(moduleName, module);
+      module = modules.get(moduleName);
     }
 
     let deps = getUnloaded(module.deps);
     if (deps.length > 0) {
+      // Only AMD module can come here.
       for (let depName of deps) {
         addModuleDependency(depMap, depName, moduleName);
       }
@@ -206,38 +207,41 @@ var requirejs, require, define;
   }
 
   function completeLoad(module) {
-    let deps = getUnloaded(module.deps);
-    if (deps.length == 0) {
-      let args = [];
-      if (module.deps) {
-        for (const depName of module.deps) {
-          args.push(modules.get(depName).result);
-        }
-      }
+    let unloaded = getUnloaded(module.deps);
+    if (unloaded.length > 0) {
+      return;
+    }
 
-      const moduleName = module.name;
-      if (!config.shim[moduleName]) {
-        module.result = module.callback.apply(global, args);
-      } else {
-        // Non AMD compliant module result is exported to global.
-        module.result = global[config.shim[moduleName].exports];
+    let args = [];
+    if (module.deps) {
+      for (const depName of module.deps) {
+        args.push(modules.get(depName).result);
       }
-      module.loaded = true;
+    }
 
-      if (depMap.has(moduleName)) {
-        for (const upperName of depMap.get(moduleName)) {
-          // Recursively call completeLoad on modules that are dependent on
-          // this module. If that module also has all deps loaded done, its
-          // callback can also be run.
-          completeLoad(modules.get(upperName));
-        }
+    const moduleName = module.name;
+    if (!config.shim[moduleName]) {
+      module.result = module.callback.apply(global, args);
+    } else {
+      // Non AMD compliant module result is exported to global.
+      module.result = global[config.shim[moduleName].exports];
+    }
+    module.loaded = true;
+
+    if (depMap.has(moduleName)) {
+      for (const upperName of depMap.get(moduleName)) {
+        // Recursively call completeLoad on modules that are dependent on
+        // this module. If that module also has all deps loaded done, its
+        // callback can also be run.
+        completeLoad(modules.get(upperName));
       }
+    }
 
-      if (shimDepMap.has(moduleName)) {
-        for (const upperName of shimDepMap.get(moduleName)) {
-          if (shimReadyToLoad(upperName)) {
-            let element = createScript(upperName);
-          }
+    if (shimDepMap.has(moduleName)) {
+      for (const upperName of shimDepMap.get(moduleName)) {
+        unloaded = getUnloaded(modules.get(moduleName).deps);
+        if (unloaded.length == 0) {
+          let element = createScript(upperName);
         }
       }
     }
