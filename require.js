@@ -189,8 +189,10 @@ var requirejs, require, define;
       // Get the first module in defQueue. This is exactly the module we created
       // in define(), because script loading and on-load event happen in order.
       module = defQueue.shift();
-      modules.set(moduleName, module);
-      module.name = moduleName;
+      if (!module.name) {
+        module.name = moduleName;
+      }
+      modules.set(module.name, module);
     } else {
       module = modules.get(moduleName);
     }
@@ -277,7 +279,7 @@ var requirejs, require, define;
 
           const main = script.getAttribute('data-main');
           var element = createScript(main, main + '.js');
-          waitingModules.add('main');
+          waitingModules.add(main);
           return;
         }
       }
